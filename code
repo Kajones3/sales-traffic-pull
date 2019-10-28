@@ -1,0 +1,83 @@
+-- CTE one allows us to grab traffic data for an entire year.
+WITH cte_one AS
+(
+SELECT
+CAST(st.Area AS VarChar(500)) as Area
+, CAST(st.Region AS Varchar(500)) as Region
+, CAST(st.District AS Varchar(500)) as District
+, st.StoreName
+, tr.TrafficDate
+, SUM(tr.Traffic) AS Traffic
+
+
+FROM
+DATAMART_ANALYTICS.traffic.Details (
+   '2018-05-01', '2019-10-01') AS tr
+   JOIN DATAMART_ANALYTICS.rq.stores AS st WITH(NOLOCK) ON tr.StoreID = st.StoreID
+
+WHERE
+st.Area IN ('South', 'West', 'East')
+AND st.StoreType NOT IN ('Mall Inline', 'FSLA', 'Mall Kiosk')
+
+
+GROUP BY
+CAST(st.Area AS VarChar(500))
+, CAST(st.Region AS Varchar(500))
+, CAST(st.District AS Varchar(500))
+, st.StoreName
+, tr.TrafficDate
+
+), 
+
+-- CTE two allows us to grab sales data for an entire year.
+CTE_two AS
+(
+
+Select
+CAST(st.Area AS VarChar(500)) as Area
+, CAST(st.Region AS Varchar(500)) as Region
+, CAST(st.District AS Varchar(500)) as District
+, st.StoreName
+, si.DayDate
+, SUM(si.ActivationQty) AS Boxes
+, SUM(si.DeviceListSales) AS Revenue
+, sum(ISNULL(si.DeviceNetSales,0) - ISNULL(si.DeviceCost,0) + ISNULL(si.CommissionAmt,0) + ISNULL(si.ISPURebateAmt,0) 
+		+ ISNULL(si.ADCAmt,0) + ISNULL(si.RebateAmt,0) + ISNULL(si.POSGPSpiffs,0) + ISNULL(si.FeaturesRevenue,0)
+		+ ISNULL(si.RGARevenue,0) + ISNULL(InstallRebateFee,ISNULL(vzwfinancing,0)*.05)) AS GeneralGP
+
+FROM
+[DATAMART_ANALYTICS].rq.[DeviceMix] ('2018-05-01', '2019-10-01') AS si
+JOIN DATAMART_ANALYTICS.rq.stores AS st WITH(NOLOCK) ON si.StoreID = st.StoreID
+
+WHERE
+st.Area IN ('South', 'West', 'East')
+AND st.StoreType NOT IN ('Mall Inline', 'FSLA', 'Mall Kiosk')
+
+GROUP BY
+CAST(st.Area AS VarChar(500))
+, CAST(st.Region AS Varchar(500))
+, CAST(st.District AS Varchar(500))
+, st.StoreName
+, si.DayDate
+)
+
+
+-- Finally we join the two CTE's together.
+SELECT
+bt.Area
+, bt.Region
+, bt.District
+, bt.StoreName
+, bt.DayDate
+, ct.Traffic
+, bt.Boxes
+, bt.Revenue
+, bt.GeneralGP
+
+FROM
+CTE_two AS bt
+FULL JOIN cte_one AS ct with(nolock) on bt.DayDate = ct.TrafficDate AND ct.StoreName = bt.StoreName
+
+ORDER BY
+bt.StoreName
+, bt.DayDate
